@@ -9,10 +9,10 @@
 
 public Plugin myinfo =
 {
-	name			= "Test",
+	name			= "CountdownHUD",
 	author		= "kurumi",
-	description = "Test.",
-	version		= "1.0",
+	description = "A simple HTML Countdown HUD",
+	version		= "1.1",
 	url			= "https://github.com/tokKurumi"
 };
 
