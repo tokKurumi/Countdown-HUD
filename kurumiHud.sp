@@ -1,14 +1,10 @@
 #include <sourcemod>
 #include <multicolors>
+#include <morecolors>
 
-#define TIMER_CHAT_TAG " \x09[\x02kurumi\x10test\x09] ► \x06"
-
-#define TIMER_TEXT_COLOR "blue"
-#define TIMER_NUMBER_COLOR "red"
+#define TIMER_CHAT_TAG "{yellow}[{darkred}kurumi{orange}test{yellow}] ► {green}"
 
 #define MAX_STRING_LENGTH 255
-
-#define TIMERS_COUNT 4
 #define MAX_HUD_LENGTH 42
 
 public Plugin myinfo =
@@ -81,6 +77,34 @@ int SearchNumber(const char[] string)
 	return StringToInt(result);
 }
 
+bool IsValidSymbol(char symbol)
+{
+	for(int i = 0; i < sizeof(filterSymbolsList); i++)
+	{
+		if(symbol == filterSymbolsList[i])
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void FilterText(char string[MAX_HUD_LENGTH])
+{
+	char buffer[MAX_HUD_LENGTH];
+	int bufferPos;
+
+	for(int i = 0; i < strlen(string); i++)
+	{
+		if(IsValidSymbol(string[i]))
+		{
+			buffer[bufferPos++] = string[i];
+		}
+	}
+
+	string = buffer;
+}
+
 void TextMessageShow(int client, const char[] message = NULL_STRING, int hold = 1)
 {
 	Event countdownHud = CreateEvent("show_survival_respawn_status", true);
@@ -96,7 +120,7 @@ void TextMessageShow(int client, const char[] message = NULL_STRING, int hold = 
 	}
 }
 
-void StartCountDown(int client, const char message[MAX_HUD_LENGTH])
+void StartCountDown(const char message[MAX_HUD_LENGTH])
 {
 	g_TimerCountValue = SearchNumber(message);
 	g_TimerMessageValue = message;
@@ -130,7 +154,7 @@ public Action Timer_CountDown(Handle hTimer)
 	{
 		if(IsClientInGame(i) && !IsFakeClient(i))
 		{
-			TextMessageShow(i, g_TimerMessageValue);
+			TextMessageShow(i, g_TimerMessageValue, 2);
 		}
 	}
 
@@ -155,18 +179,19 @@ public Action OnSay(int iClient, char[] command, int args)
 	char chatMsg[MAX_STRING_LENGTH];
 	GetCmdArgString(chatMsg, sizeof(chatMsg));
 
-	Format(chatMsg, sizeof(chatMsg), "%s%s", TIMER_CHAT_TAG, chatMsg)
-	PrintToChatAll("%s", chatMsg);
+	Format(chatMsg, sizeof(chatMsg), "%s%s", TIMER_CHAT_TAG, chatMsg);
 
 	if(!ContainBlackListWords(buffer) && ContainNumber(buffer))
 	{
-		for(int i = 1; i < MAXPLAYERS; i++)
-		{
-			if(IsClientInGame(i) && !IsFakeClient(i))
-			{
-				StartCountDown(i, buffer);
-			}
-		}
+		FilterText(buffer);
+		
+		StartCountDown(buffer);
+
+		CPrintToChatAll(chatMsg);
+	}
+	else
+	{
+		CPrintToChatAll(chatMsg);
 	}
 
 	return Plugin_Handled;
