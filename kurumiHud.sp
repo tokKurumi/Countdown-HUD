@@ -2,21 +2,31 @@
 #include <multicolors>
 #include <morecolors>
 
-#define TIMER_CHAT_TAG "{yellow}[{darkred}kurumi{orange}test{yellow}] ► {green}"
+#define CHAT_TAG "{yellow}[{darkred}kurumi{orange}test{yellow}] ►"
+#define CHAT_TEXT_COLOR "{green}"
+#define CHAT_NUMBER_COLOR "{yellow}"
+#define HUD_TEXT_COLOR "#00CCFF"
+#define HUD_NUMBER_COLOR "#FFFFFF"
 
-#define MAX_STRING_LENGTH 255
-#define MAX_HUD_LENGTH 42
+#define HUD_MAX_STRING_LEN 42
+#define HUD_NUMBER_MAX_COUNT 4
+
+#define HUD_PREFIX "▻"
+#define HUD_PREFIX_COLOR "#00FF00"
+
+#define HUD_POSTFIX "◅"
+#define HUD_POSTFIX_COLOR "#00FF00"
 
 public Plugin myinfo =
 {
 	name			= "CountdownHUD",
 	author		= "kurumi",
-	description = "A simple HTML Countdown HUD",
-	version		= "1.1",
+	description = "A simple HTML Countdown HUD for ZE.",
+	version		= "2.0",
 	url			= "https://github.com/tokKurumi"
 };
 
-char wordsBlackList[][] = 
+char g_BlackListWords[][] = 
 {
 	"recharge",
 	"cd",
@@ -26,49 +36,72 @@ char wordsBlackList[][] =
 	"cool"
 };
 
-char filterSymbolsList[] = ".,!:;<>()[]{}_/\\";
+char g_FilterSymbolsList[][] = 
+{
+	".",
+	",",
+	"!",
+	":",
+	";",
+	"<",
+	">",
+	"(",
+	")",
+	"[",
+	"]",
+	"{",
+	"}",
+	"_",
+	"/",
+	"\\",
+	"'"
+};
 
 Handle g_CurrentCountdownTimer;
-int g_TimerCountValue;
-char g_TimerMessageValue[MAX_HUD_LENGTH];
+int g_CurrentTimerSeconds;
+char g_TimerPartsBuffer[2][MAX_MESSAGE_LENGTH]; // need to PrintMapCDMessageToAll function
 
-bool ContainBlackListWords(const char[] string)
+//Check if input string contains word from blacklist.
+public bool StrContainBlackListWord(const char[] string)
 {
-	for(int i = 0; i < sizeof(wordsBlackList); i++)
+	for(int i = 0; i < sizeof(g_BlackListWords); ++i)
 	{
-		if(StrContains(string, wordsBlackList[i], false) != -1)
+		if(StrContains(string, g_BlackListWords[i], false) != -1)
 		{
 			return true;
 		}
 	}
+	
 	return false;
 }
 
-bool ContainNumber(const char[] string)
+//Check if input string contains number.
+public bool StrContainNumber(const char[] string)
 {
-	for(int i = 0; i < strlen(string); i++)
+	for(int i = 0; i < strlen(string); ++i)
 	{
 		if(IsCharNumeric(string[i]))
 		{
 			return true;
 		}
 	}
+	
 	return false;
 }
 
-int SearchNumber(const char[] string)
+//Find int number in string, if did not find - returns 0
+public int StrSearchInt(const char[] string)
 {
-	int numericCount;
-	char result[MAX_STRING_LENGTH];
+	int currentItPosition;
+	char result[HUD_NUMBER_MAX_COUNT]; // the maximum search number contains 4 symbols
 
-	for(int i = 0; i < strlen(string); i++)
+	for(int i = 0; i < strlen(string); ++i)
 	{
 		if(IsCharNumeric(string[i]))
 		{
-			result[numericCount] = string[i];
-			numericCount++;
+			result[currentItPosition++] = string[i];
 		}
-		else if(numericCount != 0)
+		else if(currentItPosition != 0) // if we already found number and current symbol is not numeric, break searching
 		{
 			break;
 		}
@@ -77,121 +110,133 @@ int SearchNumber(const char[] string)
 	return StringToInt(result);
 }
 
-bool IsValidSymbol(char symbol)
+//Check if symbol is not on g_FilterSymbolsList
+public bool IsValidSymbol(const char[] symbol)
 {
-	for(int i = 0; i < sizeof(filterSymbolsList); i++)
+	for(int i = 0; i < sizeof(g_FilterSymbolsList); ++i)
 	{
-		if(symbol == filterSymbolsList[i])
+		if(StrEqual(symbol, g_FilterSymbolsList[i]))
 		{
 			return false;
 		}
 	}
+
 	return true;
 }
 
-void FilterText(char string[MAX_HUD_LENGTH])
+//Removes all g_FilterSymbolsList symbols from input string
+public void FilterText(char string[MAX_MESSAGE_LENGTH])
 {
-	char buffer[MAX_HUD_LENGTH];
-	int bufferPos;
-
-	for(int i = 0; i < strlen(string); i++)
+	for(int i = 0; i < sizeof(g_FilterSymbolsList); ++i)
 	{
-		if(IsValidSymbol(string[i]))
-		{
-			buffer[bufferPos++] = string[i];
-		}
-	}
-
-	string = buffer;
-}
-
-void TextMessageShow(int client, const char[] message = NULL_STRING, int hold = 1)
-{
-	Event countdownHud = CreateEvent("show_survival_respawn_status", true);
-	if (countdownHud != null)
-	{
-		countdownHud.SetString("loc_token", message);
-		countdownHud.SetInt("duration", hold);
-		countdownHud.SetInt("userid", -1);
-
-		countdownHud.FireToClient(client);
-
-		countdownHud.Cancel(); 
+		ReplaceString(string, sizeof(string), g_FilterSymbolsList[i], "");
 	}
 }
 
-void StartCountDown(const char message[MAX_HUD_LENGTH])
+//Prints map message to chat with formating according to CHAT_TAG and CHAT_TEXT_COLOR
+public void PrintMapMessageToAll(const char[] message)
 {
-	g_TimerCountValue = SearchNumber(message);
-	g_TimerMessageValue = message;
+	char formatMessage[MAX_MESSAGE_LENGTH];
 
+	Format(formatMessage, sizeof(formatMessage), "%s %s%s", CHAT_TAG, CHAT_TEXT_COLOR, message);
+	TrimString(formatMessage);
+
+	CPrintToChatAll(formatMessage);
+}
+
+//Prints map message and countdown to chat with formating according to CHAT_TAG, CHAT_TEXT_COLOR and CHAT_NUMBER_COLOR
+public void PrintMapCDMessageToAll(const char[] part1, const int seconds, const char[] part2)
+{
+	char formatCDMessage[MAX_MESSAGE_LENGTH];
+
+	Format(formatCDMessage, sizeof(formatCDMessage), "%s %s%s%s%d%s%s", CHAT_TAG, CHAT_TEXT_COLOR, part1, CHAT_NUMBER_COLOR, seconds, CHAT_TEXT_COLOR, part2);
+	TrimString(formatCDMessage);
+
+	CPrintToChatAll(formatCDMessage);
+}
+
+public void FormatCountdownMessage(const char[] part1, const int seconds, const char[] part2, char output[MAX_MESSAGE_LENGTH])
+{
+	Format(output, sizeof(output), "<font color='%s'>%s</font> <font color='%s'>%s</font><font color='%s'>%d</font><font color='%s'>%s</font> <font color='%s'>%s</font>", HUD_PREFIX_COLOR, HUD_PREFIX, HUD_TEXT_COLOR, part1, HUD_NUMBER_COLOR, seconds, HUD_TEXT_COLOR, part2, HUD_POSTFIX_COLOR, HUD_POSTFIX);
+}
+
+//Shows HTML message in player's HUD
+public void HTMLHUDMessageShow(const char[] message, int hold)
+{
+	Event HTMLHUDMessage = CreateEvent("show_survival_respawn_status", true);
+
+	if(HTMLHUDMessage != null)
+	{
+		HTMLHUDMessage.SetString("loc_token", message);
+		HTMLHUDMessage.SetInt("duration", hold);
+		HTMLHUDMessage.SetInt("userid", -1);
+
+		HTMLHUDMessage.Fire();
+	}
+}
+
+public void StartCountdown(const char[] message, int seconds)
+{
 	if (g_CurrentCountdownTimer != INVALID_HANDLE)
 	{
 		KillTimer(g_CurrentCountdownTimer);
 		g_CurrentCountdownTimer = INVALID_HANDLE;
 	}
 
-	g_CurrentCountdownTimer = CreateTimer(1.0, Timer_CountDown, _, TIMER_REPEAT);
+	g_CurrentCountdownTimer = CreateTimer(1.0, Timer_Countdown, _, TIMER_REPEAT);
+	g_CurrentTimerSeconds = seconds;
 }
 
-public Action Timer_CountDown(Handle hTimer)
+public Action Timer_Countdown(Handle timer)
 {
-	char secondsCount1[MAX_HUD_LENGTH];
-	IntToString(g_TimerCountValue, secondsCount1, sizeof(secondsCount1));
+	char message[MAX_MESSAGE_LENGTH];
 
-	g_TimerCountValue--;
-	if(g_TimerCountValue < 1)
+	g_CurrentTimerSeconds--;
+	if(g_CurrentTimerSeconds < 0)
 	{
 		return Plugin_Handled;
 	}
 
-	char secondsCount2[MAX_HUD_LENGTH];
-	IntToString(g_TimerCountValue, secondsCount2, sizeof(secondsCount2));
+	FormatCountdownMessage(g_TimerPartsBuffer[0], g_CurrentTimerSeconds, g_TimerPartsBuffer[1], message);
 
-	ReplaceString(g_TimerMessageValue, sizeof(g_TimerMessageValue), secondsCount1, secondsCount2);
-
-	for(int i = 1; i < MAXPLAYERS; i++)
-	{
-		if(IsClientInGame(i) && !IsFakeClient(i))
-		{
-			TextMessageShow(i, g_TimerMessageValue, 2);
-		}
-	}
+	HTMLHUDMessageShow(message, 2);
 
 	return Plugin_Continue;
 }
 
 public void OnPluginStart()
 {
-	AddCommandListener(OnSay, "say");
+	AddCommandListener(Listener_OnSay, "say");
 }
 
-public Action OnSay(int iClient, char[] command, int args)
+public Action Listener_OnSay(int client, char[] command, int args)
 {
-	if(iClient)
+	if(client) // skip message if message typed by not console
 	{
 		return Plugin_Continue;
 	}
 
-	char buffer[MAX_HUD_LENGTH];
-	GetCmdArgString(buffer, sizeof(buffer));
+	char mapMessage[MAX_MESSAGE_LENGTH];
+	GetCmdArgString(mapMessage, sizeof(mapMessage));
 
-	char chatMsg[MAX_STRING_LENGTH];
-	GetCmdArgString(chatMsg, sizeof(chatMsg));
+	FilterText(mapMessage);
 
-	Format(chatMsg, sizeof(chatMsg), "%s%s", TIMER_CHAT_TAG, chatMsg);
-
-	if(!ContainBlackListWords(buffer) && ContainNumber(buffer))
+	if(!StrContainBlackListWord(mapMessage) && StrContainNumber(mapMessage))
 	{
-		FilterText(buffer);
-		
-		StartCountDown(buffer);
+		int seconds = StrSearchInt(mapMessage);
 
-		CPrintToChatAll(chatMsg);
+		char seconds_string[HUD_NUMBER_MAX_COUNT];
+		IntToString(seconds, seconds_string, HUD_NUMBER_MAX_COUNT);
+
+		ExplodeString(mapMessage, seconds_string, g_TimerPartsBuffer, 2, sizeof(g_TimerPartsBuffer[]));
+
+		PrintMapCDMessageToAll(g_TimerPartsBuffer[0], seconds, g_TimerPartsBuffer[1]);
+
+		StartCountdown(mapMessage, seconds);
 	}
 	else
 	{
-		CPrintToChatAll(chatMsg);
+		PrintMapMessageToAll(mapMessage);
 	}
 
 	return Plugin_Handled;
