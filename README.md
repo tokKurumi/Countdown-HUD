@@ -10,6 +10,6 @@
 
 - Filter trash symbols
 
-##Screenshot
+## Screenshot
 
 ![Countdown HUD](/1.png?raw=true "Countdown HUD")
