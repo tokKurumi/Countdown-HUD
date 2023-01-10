@@ -155,6 +155,7 @@ public void PrintMapCDMessageToAll(const char[] part1, const int seconds, const 
 	CPrintToChatAll(formatCDMessage);
 }
 
+//Formating HUD message according to HUD_TEXT_COLOR, HUD_NUMBER_COLOR, HUD_PREFIX, HUD_PREFIX_COLOR, HUD_POSTFIX and HUD_POSTFIX_COLOR
 public void FormatCountdownMessage(const char[] part1, const int seconds, const char[] part2, char output[MAX_MESSAGE_LENGTH])
 {
 	Format(output, sizeof(output), "<font color='%s'>%s</font> <font color='%s'>%s</font><font color='%s'>%d</font><font color='%s'>%s</font> <font color='%s'>%s</font>", HUD_PREFIX_COLOR, HUD_PREFIX, HUD_TEXT_COLOR, part1, HUD_NUMBER_COLOR, seconds, HUD_TEXT_COLOR, part2, HUD_POSTFIX_COLOR, HUD_POSTFIX);
@@ -175,6 +176,7 @@ public void HTMLHUDMessageShow(const char[] message, int hold)
 	}
 }
 
+//Display Countdown HTML HUD to everyone
 public void StartCountdown(const char[] message, int seconds)
 {
 	if (g_CurrentCountdownTimer != INVALID_HANDLE)
@@ -187,6 +189,7 @@ public void StartCountdown(const char[] message, int seconds)
 	g_CurrentTimerSeconds = seconds;
 }
 
+//Timer
 public Action Timer_Countdown(Handle timer)
 {
 	char message[MAX_MESSAGE_LENGTH];
@@ -199,7 +202,7 @@ public Action Timer_Countdown(Handle timer)
 
 	FormatCountdownMessage(g_TimerPartsBuffer[0], g_CurrentTimerSeconds, g_TimerPartsBuffer[1], message);
 
-	HTMLHUDMessageShow(message, 2);
+	HTMLHUDMessageShow(message, 2); // hold = 2 because with 1 it is blinking
 
 	return Plugin_Continue;
 }
