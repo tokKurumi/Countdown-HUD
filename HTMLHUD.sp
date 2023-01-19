@@ -1,7 +1,7 @@
 #include <sourcemod>
 #include <sdktools>
-#include <multicolors>
-#include <morecolors>
+#include <csgocolors_fix>
+#include <clientprefs>
 
 #define MAX_COLOR_STRING_LEN 15
 #define MAX_NUMBER_STRING_LEN 4
@@ -9,7 +9,7 @@
 #define HUD_PREFIX "▻"
 #define HUD_POSTFIX "◅"
 #define HUD_APPEAR_SOUND "ui/beepclear.wav"
-#define HUD_WARNING_SOUND "ui/beep07.wav"
+#define HUD_WARNING_SOUND "items/flashlight1.wav"
 
 ConVar g_countdown_chat_tag;
 ConVar g_countdown_chat_text_color;
@@ -35,6 +35,12 @@ char hud_number_color[MAX_COLOR_STRING_LEN];
 char hud_prefix_color[MAX_COLOR_STRING_LEN];
 char hud_postfix_color[MAX_COLOR_STRING_LEN];
 
+Handle g_toggle_sounds_cookie;
+Handle g_toggle_timer_cookie;
+
+bool g_toggle_sounds[MAXPLAYERS + 1];
+bool g_toggle_timer[MAXPLAYERS + 1];
+
 public Plugin myinfo =
 {
 	name			= "CountdownHUD",
@@ -53,7 +59,8 @@ char g_BlackListWords[][] =
 	"cooldown",
 	"cool",
 	"m4dara",
-	"4Echo"
+	"4Echo",
+	"LEVEL"
 };
 
 char g_FilterSymbolsList[][] = 
@@ -205,7 +212,7 @@ public void FormatCountdownMessage(const char[] part1, const int seconds, const 
 }
 
 //Shows HTML message in player's HUD
-public void HTMLHUDMessageShow(const char[] message, int hold)
+public void HTMLHUDMessageShow(const int client, const char[] message, int hold)
 {
 	Event HTMLHUDMessage = CreateEvent("show_survival_respawn_status", true);
 
@@ -215,7 +222,9 @@ public void HTMLHUDMessageShow(const char[] message, int hold)
 		HTMLHUDMessage.SetInt("duration", hold);
 		HTMLHUDMessage.SetInt("userid", -1);
 
-		HTMLHUDMessage.Fire();
+		HTMLHUDMessage.FireToClient(client);
+
+		HTMLHUDMessage.Cancel();
 	}
 }
 
@@ -224,7 +233,13 @@ public void StartCountdown(const char[] message, int seconds)
 {
 	RefreshConVarsVariables();
 
-	EmitSoundToAll(HUD_APPEAR_SOUND);
+	for(int i = 1; i < MAXPLAYERS; ++i)
+	{
+		if(IsClientInGame(i) && !IsFakeClient(i) && g_toggle_timer[i] && g_toggle_sounds[i])
+		{
+			EmitSoundToClient(i, HUD_APPEAR_SOUND);
+		}
+	}
 
 	if (g_CurrentCountdownSecondsTimer != INVALID_HANDLE)
 	{
@@ -267,7 +282,14 @@ public Action Timer_CountdownSeconds(Handle timer)
 	char message[MAX_MESSAGE_LENGTH];
 	FormatCountdownMessage(g_TimerPartsBuffer[0], g_CurrentTimerSeconds, g_TimerPartsBuffer[1], message);
 
-	HTMLHUDMessageShow(message, 2); // hold = 2 because with 1 it is blinking
+	for(int i = 1; i < MAXPLAYERS; ++i)
+	{
+		if(IsClientInGame(i) && !IsFakeClient(i) && g_toggle_timer[i])
+		{
+			HTMLHUDMessageShow(i, message, 2); // hold = 2 because with 1 it is blinking
+		}
+	}
+
 
 	return Plugin_Continue;
 }
@@ -299,7 +321,13 @@ public Action Timer_CountdownWarningSound(Handle timer)
 		return Plugin_Handled;
 	}
 
-	EmitSoundToAll(HUD_WARNING_SOUND);
+	for(int i = 1; i < MAXPLAYERS; ++i)
+	{
+		if(IsClientInGame(i) && !IsFakeClient(i) && g_toggle_timer[i] && g_toggle_sounds[i])
+		{
+			EmitSoundToClient(i, HUD_WARNING_SOUND);
+		}
+	}
 
 	return Plugin_Continue;
 }
@@ -379,6 +407,24 @@ public void OnPluginStart()
 	AddCommandListener(Listener_OnSay, "say");
 
 	HookEvent("round_start", Event_RoundStart);
+	HookEvent("round_end", Event_RoundEnd);
+
+	g_toggle_timer_cookie = RegClientCookie("Toggle timer", "Disable/Enable countdown timer.", CookieAccess_Private);
+	g_toggle_sounds_cookie = RegClientCookie("Toggle timer sounds", "Disable/Enable countdown timer sounds.", CookieAccess_Private);
+
+	for (int iClient = 1; iClient <= MaxClients; iClient++)
+	{
+		if (IsClientInGame(iClient))
+		{
+			if (AreClientCookiesCached(iClient))
+			{
+				OnClientCookiesCached(iClient);
+			}
+		}
+	}
+
+	RegConsoleCmd("sm_timer", CMD_timer, "Toggle countdown timer.");
+	RegConsoleCmd("sm_timersound", CMD_timersounds, "Toggle countdown timer sounds.");
 
 	g_countdown_chat_tag = CreateConVar("countdown_chat_tag", "{yellow}[{darkred}kurumi{orange}test{yellow}] ►", "Will shown in chat before map message.");
 	g_countdown_chat_text_color = CreateConVar("countdown_chat_text_color", "{green}", "Color of main text in chat.");
@@ -391,7 +437,6 @@ public void OnPluginStart()
 	g_countdown_hud_number_color = CreateConVar("countdown_hud_number_color", "#FFFFFF", "HEX Color of the number in HTML HUD.");
 	g_countdown_hud_prefix_color = CreateConVar("countdown_hud_prefix_color", "#00FF00", "HEX Color of the prefix symbol in HTML HUD.");
 	g_countdown_hud_postfix_color = CreateConVar("countdown_hud_postfix_color", "#00FF00", "HEX Color of the postfix symbol in HTML HUD.");
-
 
 	g_countdown_chat_tag.AddChangeHook(ConVarChange_countdown_chat_tag);
 	g_countdown_chat_text_color.AddChangeHook(ConVarChange_countdown_chat_text_color);
@@ -406,6 +451,63 @@ public void OnPluginStart()
 	g_countdown_hud_postfix_color.AddChangeHook(ConVarChange_countdown_hud_postfix_color);
 }
 
+public void OnClientCookiesCached(int iClient)
+{
+	if(IsFakeClient(iClient)) return;
+
+	char szCookie[2];
+
+	GetClientCookie(iClient, g_toggle_timer_cookie, szCookie, sizeof(szCookie));
+	if (szCookie[0] == '\0')
+	{
+		g_toggle_timer[iClient] = true; // Show timer as default
+	}
+	else
+	{
+		g_toggle_timer[iClient] = view_as<bool>(StringToInt(szCookie));
+	}
+
+	GetClientCookie(iClient, g_toggle_sounds_cookie, szCookie, sizeof(szCookie));
+	if (szCookie[0] == '\0')
+	{
+		g_toggle_timer[iClient] = true; // Play timer sounds as default
+	}
+	else
+	{
+		g_toggle_timer[iClient] = view_as<bool>(StringToInt(szCookie));
+	}
+}
+
+public Action CMD_timer(int client, int args)
+{
+	if(g_toggle_timer[client])
+	{
+		CPrintToChat(client, "{default}Countdown HUD has been {green}enabled{default}.");
+	}
+	else
+	{
+		CPrintToChat(client, "{default}Countdown HUD has been {red}disabled{default}.");
+	}
+
+	return Plugin_Handled;
+}
+
+public Action CMD_timersounds(int client, int args)
+{
+	g_toggle_sounds[client] = g_toggle_sounds[client] ? false : true;
+
+	if(g_toggle_sounds[client])
+	{
+		CPrintToChat(client, "{default}Countdown sounds have been {green}enabled{default}.");
+	}
+	else
+	{
+		CPrintToChat(client, "{default}Countdown sounds have been {red}disabled{default}.");
+	}
+
+	return Plugin_Handled;
+}
+
 public void OnMapStart()
 {
 	PrecacheSound(HUD_APPEAR_SOUND, true);
@@ -415,6 +517,12 @@ public void OnMapStart()
 public void Event_RoundStart(Handle event, const char[] name, bool dontBroadcast)
 {
 	g_RoundStartTime = GetTime();
+}
+
+public void Event_RoundEnd(Handle event, const char[] command, bool dontBroadcast)
+{
+	g_CurrentTimerSeconds = 0;
+	g_CurrentTimerWarningRepeats = 0;
 }
 
 public Action Listener_OnSay(int client, char[] command, int args)
