@@ -46,7 +46,7 @@ public Plugin myinfo =
 	name			= "CountdownHUD",
 	author		= "kurumi",
 	description = "A simple HTML Countdown HUD for ZE.",
-	version		= "2.1",
+	version		= "2.2",
 	url			= "https://github.com/tokKurumi"
 };
 

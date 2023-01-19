@@ -16,6 +16,12 @@
 
 - Sounds effects
 
+## Commands
+
+- [ANY PLAYERS] `sm_timer` - Toggle countdown timer display.
+
+- [ANY PLAYERS] `sm_timersound` - Toggle countdown timer sounds.
+
 ## Cvars
 
 - `countdown_chat_tag` - Will shown in chat before map message.
